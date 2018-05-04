@@ -38,20 +38,7 @@ def f(a, L=None):
     return L
 
 
-def concat(*args, sep="dwdw"):
-    """Do nothing, but document it.
 
-
-    No, really, it doesn't do anything.
-    """
-    return sep.join(args)
-
-
-print(concat.__doc__)
-
-print(".".join(("earth", "mars", "venus")))
-
-print(concat("earth", "mars", "venus"))
 
 
 

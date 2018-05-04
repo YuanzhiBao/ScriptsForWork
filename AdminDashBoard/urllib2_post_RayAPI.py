@@ -25,7 +25,7 @@ url = "http://127.0.0.1:3000"
 
 token = response["token"]
 
-token += "1"
+# token += "1"
 
 req = urllib2.Request(url)
 
@@ -42,7 +42,7 @@ print(type(wrong_token_response))
 #     print("hi")
 print(wrong_token_response)
 
-print(wrong_token_response["message"])
+# print(wrong_token_response["message"])
 
 
 ## next step: how to dealing with a invalid token? How to pass back an invalid token?

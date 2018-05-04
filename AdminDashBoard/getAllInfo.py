@@ -291,7 +291,7 @@ if __name__ == "__main__":
 
     allinfo[hostname] = {'basic_info': basic_info, 'disk_list': disk_list, 'ram_list': ram_list, \
                            'cpu_list': cpu_list, 'diskusedwidth': diskusedwidth, 'diskfreewidth': diskfreewidth, \
-                           'ramusedwidth': ramusedwidth, 'ramfreewidth': ramfreewidth}
+                           'ramusedwidth': ramusedwidth, 'ramfreewidthd': ramfreewidth}
 
     VMs = VMs()
 
