@@ -1,8 +1,8 @@
-#!/usr/bin/evn python
+#!/usr/bin/python
 # -*- coding:utf-8 -*-
 __author__ = 'Yuanzhi Bao'
 
-import subprocess,json
+import subprocess, json, urllib2
 
 
 def convert_str2float(b):
@@ -40,8 +40,8 @@ def convert_str2float(b):
                 pass
     return b
 
-class VMhost():
 
+class VMhost():
     '''
     This class is used to get the basic infomation of the VMhost
     It includes basic information
@@ -61,287 +61,280 @@ class VMhost():
     def __init__(self):
 
         baseCommend = "hostname | cut -d. -f1"
-        output = subprocess.check_output(['bash','-c',baseCommend])
+        output = subprocess.check_output(['bash', '-c', baseCommend])
         hostname = output.strip()
         self.hostname = hostname
-
 
     def gethostname(self):
 
         return self.hostname
 
-    def basic_info(self):
-        basic_info = {}
-
-        baseCommend = "dmidecode | grep \"Product\" | awk -F':' '{if(NR==1){print \"product:\"$2}}'"
-
-        output = subprocess.check_output(['bash','-c',baseCommend])
-
-        basic_info[output.split("\n")[0].split(":")[0]] = output.split("\n")[0].split(":")[1].strip()
-
-        return basic_info
-
-    # for string output : "product: KVM"
-
-
-    def disk_list(self):
-        disk_list = {}
-
+    def getdiskTotal(self):
         ## all space
         baseCommend = "df -h | awk -F' ' '{if(NR>1){print $2}}' |awk -F'G' '{print $1}' | sed -r 's#(.*)([M]$)#1#g' | \
                     sed -r 's#(.*)([T]$)#1000#g'|awk '{sum+=$1}END{print \"disk:\"sum}'"
-        output = subprocess.check_output(['bash','-c',baseCommend])
-        disk_list[output.split("\n")[0].split(":")[0]] = output.split("\n")[0].split(":")[1].strip()
+        output = subprocess.check_output(['bash', '-c', baseCommend])
+        # disk_list[output.split("\n")[0].split(":")[0]] = output.split("\n")[0].split(":")[1].strip()
 
-        ## Used space
+        key = "diskTotal"
+
+        value = output.split("\n")[0].split(":")[1].strip()
+
+        return value
+
+    def getdiskUsed(self):
+
         baseCommend = "df -h | awk -F' ' '{if(NR>1){print $3}}' |awk -F'G' '{print $1}' | \
                     sed -r 's#(.*)([M]$)#1#g' | awk '{sum+=$1}END{print \"diskused:\"sum}'"
-        output = subprocess.check_output(['bash','-c',baseCommend])
-        disk_list[output.split("\n")[0].split(":")[0]] = output.split("\n")[0].split(":")[1].strip()
+        output = subprocess.check_output(['bash', '-c', baseCommend])
+        # disk_list[output.split("\n")[0].split(":")[0]] = output.split("\n")[0].split(":")[1].strip()
 
-        ## free space
-        baseCommend = "df -h | awk -F' ' '{if(NR>1){print $4}}' |awk -F'G' '{print $1}' | \
-                    sed -r 's#(.*)([M]$)#1#g' | awk '{sum+=$1}END{print \"diskfree:\"sum}'"
-        output = subprocess.check_output(['bash','-c',baseCommend])
-        disk_list[output.split("\n")[0].split(":")[0]] = output.split("\n")[0].split(":")[1].strip()
+        key = "diskUsed"
+        value = output.split("\n")[0].split(":")[1].strip()
 
+        return value
 
-        ## end of getting the disk information
+    def getdiskRaw(self):
 
-        ## string output {'diskused': '5.7', 'diskfree': '18.7', 'disk': '21.6'}
+        baseCommend = "df -h"
+        output = subprocess.check_output(['bash', '-c', baseCommend])
 
-        return disk_list
+        output_json = json.dumps(output)
 
-    def ram_list(self):
-        ## get the ram information starts
+        return output_json
 
-        ram_list = {}
+    def getoperatingSystem(self):
 
-        # cmd
+        baseCommend = "cat /etc/redhat-release"
 
-        ##All space
+        output = subprocess.check_output(['bash', '-c', baseCommend])
+
+        key = "operatingSystem"
+
+        value = output.strip()
+
+        return value
+
+    def getvms(self):
+
+        vms = {}
+
+        baseCommend = "virsh list --all  | tail -n +3 | awk -F'[ ]+' '{print $3\":\"$4,$5}' \
+        | head -n -1"
+
+        output = subprocess.check_output(['bash', '-c', baseCommend])
+
+        out = output.split("\n")
+
+        for item in out:
+            if item:
+                key = item.strip().split(":")[0]
+                value = item.strip().split(":")[1]
+                vms[key] = value
+
+        return vms
+
+    def getCpuInfo(self):
+
+        cpuInfo = {}
+
+        ##cpuname
+        baseCommend = "cat /proc/cpuinfo | grep 'name' | head -1 | awk -F':' '{print $2}'|\
+                        sed 's/^ //g' | awk -F':' '{print \"model:\"$1}'"
+        output = subprocess.check_output(['bash', '-c', baseCommend])
+        cpuInfo[output.split("\n")[0].split(":")[0]] = output.split("\n")[0].split(":")[1].strip()
+
+        ##cpucores
+        baseCommend = "cat /proc/cpuinfo | grep \"cpu cores\" | uniq | awk -F: '{print $2}' | \
+                sed 's/^ //g' | awk '{print \"numberCores:\"$1}'"
+        output = subprocess.check_output(['bash', '-c', baseCommend])
+        cpuInfo[output.split("\n")[0].split(":")[0]] = output.split("\n")[0].split(":")[1]
+
+        # cpuMaxSpeed
+        baseCommend = "dmidecode -t processor | grep 'Speed'| head -1"
+
+        output = subprocess.check_output(['bash', '-c', baseCommend])
+
+        key = "maxSpeed"
+
+        value = output.split(":")[1].strip()
+
+        cpuInfo[key] = value
+
+        # cpuCurrentSpeed
+        baseCommend = "dmidecode -t processor | grep 'Speed'| head -2 | tail -1"
+
+        output = subprocess.check_output(['bash', '-c', baseCommend])
+
+        # key = output.split(":")[0].strip()
+        key = "curSpped"
+        value = output.split(":")[1].strip()
+
+        cpuInfo[key] = value
+
+        # print(cpuInfo)
+
+        return cpuInfo
+
+    # coresAllocatedVM: Number, //Number of cores allocated / in use by virtual machines.
+
+    def getcoresAllocatedVM(self):
+
+        baseCommend = "virsh domstats | grep vcpu.current | awk -F'=' '{sum+=$2} END {print sum}'"
+
+        output = subprocess.check_output(['bash', '-c', baseCommend])
+        key = "coresAllocatedVM"
+        value = output.strip()
+        return value
+
+    # ramUsed: Number, //Megs used (actual RSS)
+
+    def getRamUsed(self):
+
+        ##Used space
+        baseCommend = "free -mg | awk '{if (NR==2){print \"ramused:\"$3}}'"
+        output = subprocess.check_output(['bash', '-c', baseCommend])
+        # ram_list[output.split("\n")[0].split(":")[0]] = output.split("\n")[0].split(":")[1]
+
+        key = "ramUsed"
+
+        value = output.split("\n")[0].split(":")[1]
+
+        return value
+
+    def getamtRam(self):
 
         ## all space
 
         baseCommend = "free -mg | awk '{if (NR==2){print \"ram:\"$2}}'"
-        output = subprocess.check_output(['bash','-c',baseCommend])
-        ram_list[output.split("\n")[0].split(":")[0]] = output.split("\n")[0].split(":")[1]
-
-        ##Used space
-        baseCommend = "free -mg | awk '{if (NR==2){print \"ramused:\"$3}}'"
-        output = subprocess.check_output(['bash','-c',baseCommend])
-        ram_list[output.split("\n")[0].split(":")[0]] = output.split("\n")[0].split(":")[1]
-
-        ##free space
-        baseCommend = "free -mg | awk '{if (NR==2){print \"ramfree:\"$4}}'"
-        output = subprocess.check_output(['bash','-c',baseCommend])
-        ram_list[output.split("\n")[0].split(":")[0]] = output.split("\n")[0].split(":")[1]
-
-
-
-        ## end of the getting the ram information
-
-        return ram_list
-
-
-    ###CPU info starts
-
-    def cpu_list(self):
-
-        cpu_list = {}
-
-        ##cpuname
-        baseCommend = "cat /proc/cpuinfo | grep 'name' | head -1 | awk -F':' '{print $2}'|\
-                sed 's/^ //g' | awk -F':' '{print \"cpuname:\"$1}'"
-        output = subprocess.check_output(['bash','-c',baseCommend])
-        cpu_list[output.split("\n")[0].split(":")[0]] = output.split("\n")[0].split(":")[1].strip()
-
-
-        ##physicalcpu
-        baseCommend = "cat /proc/cpuinfo | grep 'physical id' | sort | uniq | wc -l| awk '{print \"physicalcpu:\"$1}'"
-        output = subprocess.check_output(['bash','-c',baseCommend])
-        cpu_list[output.split("\n")[0].split(":")[0]] = output.split("\n")[0].split(":")[1]
-
-        ##cpucores
-        baseCommend = "cat /proc/cpuinfo | grep \"cpu cores\" | uniq | awk -F: '{print $2}' | \
-                sed 's/^ //g' | awk '{print \"cpucores:\"$1}'"
-        output = subprocess.check_output(['bash','-c',baseCommend])
-        cpu_list[output.split("\n")[0].split(":")[0]] = output.split("\n")[0].split(":")[1]
-
-
-        ##virtualcpu
-        baseCommend = "cat /proc/cpuinfo | grep 'processor' | wc -l | awk '{print \"virtualcpu:\"$1}'"
-        output = subprocess.check_output(['bash','-c',baseCommend])
-        cpu_list[output.split("\n")[0].split(":")[0]] = output.split("\n")[0].split(":")[1]
-
-        return cpu_list
-
-
-
-class VMs():
-
-    def __init__(self):
-
-        baseCommend = "virsh list --all | awk -F' ' '{if(NR>2){print $2}}'"
         output = subprocess.check_output(['bash', '-c', baseCommend])
-        self.vm_list = []
-        for item in output.split('\n'):
-            if item != '':
-                self.vm_list.append(item)
+        key = "amtRam"
+        value = output.split("\n")[0].split(":")[1]
 
-    def getStateInfo(self,vm):
+        return value
 
-        state_info = {}
+    def getdefault_address(self):
 
+        baseCommend = "DEV=`route | grep \"default\" | awk '{print $NF}'`; ip a | grep -A 4 $DEV \
+        | grep -m 1 \"inet\" | awk '{print $2}'"
 
-        baseCommend = "virsh domstats %s | grep state.state | \
-        sed  \"s#1#running#g\" | sed \"s#5#shut off#g\"| cut -d\".\" -f2" %vm
         output = subprocess.check_output(['bash', '-c', baseCommend])
+        key = "default_address"
+        value = output.strip()
+        return value
 
-        state_info[output.split("\n")[0].split("=")[0]] = output.split("\n")[0].split("=")[1]
+    def getipAddrs(self):
 
-        return state_info
+        baseCommend = "ip addr list | grep -oE \
+        '((1?[0-9][0-9]?|2[0-4][0-9]|25[0-5])\.){3}(1?[0-9][0-9]?|2[0-4][0-9]|25[0-5])(/?[0-3]?[0-9]?)' \
+        | tail -n +2"
 
-    def getCPUInfo(self,vm):
-
-        cpu_info = {}
-
-        baseCommend = "virsh domstats %s | grep vcpu.current" % vm
         output = subprocess.check_output(['bash', '-c', baseCommend])
-        cpu_info[output.split("\n")[0].split("=")[0].strip()] = output.split("\n")[0].split("=")[1].strip()
+        output = output.strip().split("\n")
 
-        baseCommend = "virsh domstats %s | grep vcpu.maximum" % vm
-        output = subprocess.check_output(['bash', '-c', baseCommend])
-        cpu_info[output.split("\n")[0].split("=")[0].strip()] = output.split("\n")[0].split("=")[1].strip()
+        return output
 
-        return cpu_info
+    def getAllInfo(self):
 
-    def getDiskInfo(self,vm):
+        hostinfo = {}
 
-        disk_info = {}
+        hostinfo["name"] = self.gethostname()
 
-        baseCommend = "virsh domstats %s | egrep \"block.*.phy|block.*.path|block.*.cap\"" % vm
-        output = subprocess.check_output(['bash', '-c', baseCommend])
-        disk_info = self.format_vm_disk_info(output)
+        hostinfo["coresAllocatedVM"] = self.getcoresAllocatedVM()
 
-        return disk_info
+        hostinfo["ramUsed"] = self.getRamUsed()
+
+        hostinfo["amtRam"] = self.getamtRam()
+
+        hostinfo["CpuInfo"] = self.getCpuInfo()
+
+        hostinfo["diskTotal"] = self.getdiskTotal()
+
+        hostinfo["diskUsed"] = self.getdiskUsed()
+
+        # hostinfo["getdiskRaw"] = self.getdiskRaw()
+
+        hostinfo["vms"] = self.getvms()
+
+        hostinfo["default_address"] = self.getdefault_address()
+
+        hostinfo["ipAddrs"] = self.getipAddrs()
+
+        return hostinfo
 
 
-    def format_vm_disk_info(self, diskString):
+class push_API():
+    '''
+    This class is used to connect to API to push data to the API as well
+    '''
 
-        disk_info = {}
+    def __init__(self, data, audata = None, urlp = None, urla = None):
+        self.data = data
+        if not audata:
+            self.audata = json.dumps({'name': 'apitest', 'pass': 'this_is_temporary'})
+        else:
+            self.audata = json.dumps(audata)
+        if not urla:
+            self.url_auth = "http://127.0.0.1:3000/auth"
+        else:
+            self.url_auth = urla
+            # change the push url as needed
+        if not urlp:
+            self.url_push = "http://127.0.0.1:3000"
+        else:
+            self.url_push = urlp
+        self.token = ""
+        self.pulldata = []
 
-        i = 3
+    def authentication_Save_Token(self):
+        req = urllib2.Request(self.url_auth, self.audata, {'Content-Type': 'application/json'})
+        try:
+            f = urllib2.urlopen(req)
+        except urllib2.HTTPError:
+            print("Authentication Failed")
+            return
+        response = json.loads(f.read())
+        f.close()
+        self.token = response["token"]
 
-        for item in diskString.split("\n"):
-            if item == "":
-                continue
-            # print(i, item)
-            if (i % 3) == 0:
-                diskname = item.split('=')[1].strip()
-                disk_info[diskname] = {}
-            if (i % 3) == 1:
-                diskvalue = float(item.split("=")[1]) / 1073741824
-                disk_info[diskname]["LC"] = diskvalue
-            if (i % 3) == 2:
-                diskvalue = float(item.split("=")[1]) / 1073741824
-                disk_info[diskname]["PC"] = diskvalue
-            i += 1
+    def checkToken(self):
 
-        return disk_info
+        req = urllib2.Request(self.url_push)
+        req.add_header('x-access-token', self.token)
 
-    def getVMInfo(self):
+        req.add_data(self.data)
+        f = urllib2.urlopen(req)
 
-        self.vms_info = {}
+        token_response = json.loads(f.read())
 
-        for vm in self.vm_list:
-            state_info = self.getStateInfo(vm)
-            cpu_info = self.getCPUInfo(vm)
-            disk_info = self.getDiskInfo(vm)
+        f.close()
+        # change with the right response as needed
+        if isinstance(token_response, (list,)):
+            self.pulldata = token_response
+        elif isinstance(token_response, (dict,)):
+            if token_response["message"] and token_response["message"] == 'invalid signature':
+                print("Invalid signature! Please try again")
+                return
 
-            self.vms_info[vm] = {'state_info': state_info, 'cpu_info': cpu_info, 'disk_info': disk_info}
+    def getData(self):
+        if not self.token:
+            self.authentication_Save_Token()
 
-        global convert_str2float
+        self.checkToken()
 
-        self.vms_info = convert_str2float(self.vms_info)
+        global littleInfo
 
-        return self.vms_info
+        littleInfo = self.pulldata
+
+
 
 
 if __name__ == "__main__":
+    host = VMhost()
 
-    allinfo = {}
-
-    VMhost = VMhost()
-
-    hostname = VMhost.gethostname()
-
-    basic_info = VMhost.basic_info()
-    disk_list = VMhost.disk_list()
-    ram_list = VMhost.ram_list()
-    cpu_list = VMhost.cpu_list()
-
-    ramusedwidth = int((float(ram_list["ramused"]) / float(ram_list["ram"])) * 100)
-
-    ramfreewidth = int((float(ram_list["ramfree"]) / float(ram_list["ram"])) * 100)
-
-    diskusedwidth = int((float(disk_list["diskused"]) / float(disk_list["disk"])) * 100)
-
-    diskfreewidth = int((float(disk_list["diskfree"]) / float(disk_list["disk"])) * 100)
-
-    allinfo[hostname] = {'basic_info': basic_info, 'disk_list': disk_list, 'ram_list': ram_list, \
-                           'cpu_list': cpu_list, 'diskusedwidth': diskusedwidth, 'diskfreewidth': diskfreewidth, \
-                           'ramusedwidth': ramusedwidth, 'ramfreewidthd': ramfreewidth}
-
-    VMs = VMs()
-
-    VMsInfo = VMs.getVMInfo()
-
-    allinfo[hostname]['vms_info'] = VMsInfo
+    AllInfo = host.getAllInfo()
 
 
-    allinfo = convert_str2float(allinfo)
-
-    print(json.dumps(allinfo))
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    print(AllInfo)
 
 
