@@ -165,7 +165,7 @@ class VMhost():
         output = subprocess.check_output(['bash', '-c', baseCommend])
 
         # key = output.split(":")[0].strip()
-        key = "curSpped"
+        key = "curSpeed"
         value = output.split(":")[1].strip()
 
         cpuInfo[key] = value
@@ -223,6 +223,9 @@ class VMhost():
 
     def getipAddrs(self):
 
+        # no need to 192.168.*.*
+        # do need 10..
+
         baseCommend = "ip addr list | grep -oE \
         '((1?[0-9][0-9]?|2[0-4][0-9]|25[0-5])\.){3}(1?[0-9][0-9]?|2[0-4][0-9]|25[0-5])(/?[0-3]?[0-9]?)' \
         | tail -n +2"
@@ -261,14 +264,13 @@ class VMhost():
         return hostinfo
 
 
-# xinhaobaocunlenima
 
 class push_API():
     '''
     This class is used to connect to API to push data to the API as well
     '''
 
-    def __init__(self, data, audata = None, urlp = None, urla = None):
+    def __init__(self, data, hostname, audata = None, urlp = None, urla = None):
         self.data = data
         if not audata:
             self.audata = json.dumps({'name': 'apitest', 'pass': 'this_is_temporary'})
@@ -280,9 +282,10 @@ class push_API():
             self.url_auth = urla
             # change the push url as needed
         if not urlp:
-            self.url_push = "http://127.0.0.1:3000"
+            self.url_push = "http://127.0.0.1:3000/update/host/%s" % hostname
         else:
             self.url_push = urlp
+
         self.token = ""
         self.pulldata = []
 
@@ -295,38 +298,51 @@ class push_API():
             return
         response = json.loads(f.read())
         f.close()
+        print(response['token'])
         self.token = response["token"]
 
+
     def checkToken(self):
+
+        # /data/update?
 
         req = urllib2.Request(self.url_push)
         req.add_header('x-access-token', self.token)
 
-        req.add_data(self.data)
+        print(self.data)
+
+        req.add_data(json.dumps(self.data))
+
+
         f = urllib2.urlopen(req)
+
 
         token_response = json.loads(f.read())
 
         f.close()
-        # change with the right response as needed
-        if isinstance(token_response, (list,)):
-            self.pulldata = token_response
-        elif isinstance(token_response, (dict,)):
-            if token_response["message"] and token_response["message"] == 'invalid signature':
-                print("Invalid signature! Please try again")
-                return
+        # why there is not return value?
+        # Forget what Ray need to cpu perc
 
-    def getData(self):
+        print(token_response)
+        # will return what sent to the API
+        # change with the right response as needed
+        # if isinstance(token_response, (list,)):
+        #     self.pulldata = token_response
+        # elif isinstance(token_response, (dict,)):
+        #     if token_response["message"] and token_response["message"] == 'invalid signature':
+        #         print("Invalid signature! Please try again")
+        return
+
+    def pushData(self):
         if not self.token:
             self.authentication_Save_Token()
 
         self.checkToken()
 
-        global littleInfo
-
-        littleInfo = self.pulldata
-
-
+        # does not need below code in script
+        # global littleInfo
+        #
+        # littleInfo = self.pulldata
 
 
 if __name__ == "__main__":
@@ -334,5 +350,8 @@ if __name__ == "__main__":
 
     AllInfo = host.getAllInfo()
 
+    hostname = host.gethostname()
 
-    print(AllInfo)
+    pushConnetion = push_API(AllInfo,hostname)
+
+    pushConnetion.pushData()
