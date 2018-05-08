@@ -67,6 +67,30 @@ class VMhost():
 
         return self.hostname
 
+    def getloadPct(self):
+
+        import time
+
+        with open('/proc/stat', 'r') as f:
+            l = f.read().splitlines()[0].split()[1:]
+            sys = float(l[0])
+            usr = float(l[2])
+            idle = float(l[3])
+
+        time.sleep(.25)
+
+        with open('/proc/stat', 'r') as f:
+            l = f.read().splitlines()[0].split()[1:]
+            sys_delt = float(l[0]) - sys
+            usr_delt = float(l[2]) - usr
+            idle_delt = float(l[3]) - idle
+
+        pct = ((sys_delt + usr_delt) / (sys_delt + usr_delt + idle_delt)) * 100
+
+        pct = round(pct, 2)
+
+        return pct
+
     def getdiskTotal(self):
         ## all space
         baseCommend = "df -h | awk -F' ' '{if(NR>1){print $2}}' |awk -F'G' '{print $1}' | sed -r 's#(.*)([M]$)#1#g' | \
@@ -149,24 +173,28 @@ class VMhost():
         cpuInfo[output.split("\n")[0].split(":")[0]] = output.split("\n")[0].split(":")[1]
 
         # cpuMaxSpeed
-        baseCommend = "dmidecode -t processor | grep 'Speed'| head -1"
-
-        output = subprocess.check_output(['bash', '-c', baseCommend])
-
-        key = "maxSpeed"
-
-        value = output.split(":")[1].strip()
-
-        cpuInfo[key] = value
+        # We have many sppeed info here, what should we do?
+        # centos dmidecode need sudo permission, Not good. We are just gonna dump this
+        #
+        # baseCommend = "dmidecode -t processor | grep \"Speed\"| head -1"
+        #
+        # output = subprocess.check_output(['bash', '-c', baseCommend])
+        #
+        # key = "maxSpeed"
+        #
+        # value = output.split(":")[1].strip()
+        #
+        # cpuInfo[key] = value
 
         # cpuCurrentSpeed
-        baseCommend = "dmidecode -t processor | grep 'Speed'| head -2 | tail -1"
+        baseCommend = "lscpu | grep \"CPU MHz\" | awk -F'[ ]+' '{print $3}'"
 
         output = subprocess.check_output(['bash', '-c', baseCommend])
 
         # key = output.split(":")[0].strip()
         key = "curSpeed"
-        value = output.split(":")[1].strip()
+
+        value = str(int(float(output.strip()))) + " MHz"
 
         cpuInfo[key] = value
 
@@ -233,7 +261,16 @@ class VMhost():
         output = subprocess.check_output(['bash', '-c', baseCommend])
         output = output.strip().split("\n")
 
-        return output
+        print(output)
+
+        output2 = []
+
+        for ip in output:
+            if not ip.startswith("192"):
+                output2.append(ip)
+
+
+        return output2
 
     def getAllInfo(self):
 
@@ -242,6 +279,8 @@ class VMhost():
         hostinfo["name"] = self.gethostname()
 
         hostinfo["coresAllocatedVM"] = self.getcoresAllocatedVM()
+
+        hostinfo["loadPct"] = self.getloadPct()
 
         hostinfo["ramUsed"] = self.getRamUsed()
 
@@ -270,21 +309,22 @@ class push_API():
     This class is used to connect to API to push data to the API as well
     '''
 
-    def __init__(self, data, hostname, audata = None, urlp = None, urla = None):
+    def __init__(self, data, hostname, audata = None, urlp = None, urla = None, urladd = None):
         self.data = data
-        if not audata:
-            self.audata = json.dumps({'name': 'apitest', 'pass': 'this_is_temporary'})
-        else:
-            self.audata = json.dumps(audata)
-        if not urla:
-            self.url_auth = "http://127.0.0.1:3000/auth"
-        else:
-            self.url_auth = urla
-            # change the push url as needed
-        if not urlp:
-            self.url_push = "http://127.0.0.1:3000/update/host/%s" % hostname
-        else:
-            self.url_push = urlp
+        self.url_root = "http://127.0.0.1:3000"
+
+        self.audata = json.dumps(audata) if audata  else\
+            json.dumps({'name': 'apitest', 'pass': 'this_is_temporary'})
+
+
+
+        self.url_auth = urla if urla else \
+            "http://127.0.0.1:3000/auth"
+
+        self.url_update = urlp if urlp else "http://127.0.0.1:3000/update/host/%s" % hostname
+
+
+        self.url_add = urladd if urladd else "http://127.0.0.1:3000/host/add/"
 
         self.token = ""
         self.pulldata = []
@@ -302,47 +342,84 @@ class push_API():
         self.token = response["token"]
 
 
+    def addData(self):
+
+        req = urllib2.Request(self.url_add)
+        req.add_header('x-access-token', self.token)
+        req.add_header('Content-Type', 'application/json')
+
+        req.add_data(json.dumps(self.data))
+
+        f = urllib2.urlopen(req)
+
+        response = json.loads(f.read())
+
+        if "errmsg" in response:
+            if "duplicate key" in response["errmsg"]:
+                return False
+            else:
+                print("errmsg, but not dulicate key")
+                return False
+        else:
+            return True
+
+
+
+    def updateData(self):
+
+        req = urllib2.Request(self.url_update)
+        req.add_header('x-access-token', self.token)
+        req.add_header('Content-Type', 'application/json')
+
+        req.add_data(json.dumps(self.data))
+
+        f = urllib2.urlopen(req)
+
+        response = json.loads(f.read())
+
+        print(response)
+
+        return
+
     def checkToken(self):
 
         # /data/update?
 
-        req = urllib2.Request(self.url_push)
+        req = urllib2.Request(self.url_root)
         req.add_header('x-access-token', self.token)
-
-        print(self.data)
-
-        req.add_data(json.dumps(self.data))
+        req.add_header('Content-Type', 'application/json')
 
 
         f = urllib2.urlopen(req)
 
-
         token_response = json.loads(f.read())
 
         f.close()
-        # why there is not return value?
-        # Forget what Ray need to cpu perc
+
 
         print(token_response)
         # will return what sent to the API
         # change with the right response as needed
-        # if isinstance(token_response, (list,)):
-        #     self.pulldata = token_response
-        # elif isinstance(token_response, (dict,)):
-        #     if token_response["message"] and token_response["message"] == 'invalid signature':
-        #         print("Invalid signature! Please try again")
-        return
+        if isinstance(token_response, (list,)):
+            self.pulldata = token_response
+            return True
+        elif isinstance(token_response, (dict,)):
+            if token_response["message"] and token_response["message"] == 'invalid signature':
+                print("Invalid signature! Please try again")
+                return False
 
     def pushData(self):
         if not self.token:
             self.authentication_Save_Token()
 
-        self.checkToken()
+        if self.checkToken():
+            if self.addData():
+                print("successfully added data")
+            elif self.updateData():
+                print("successfully updated data")
+        else:
+            print("Token is not correct!!!!")
 
-        # does not need below code in script
-        # global littleInfo
-        #
-        # littleInfo = self.pulldata
 
 
 if __name__ == "__main__":
